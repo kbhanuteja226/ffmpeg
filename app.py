@@ -17,56 +17,51 @@ os.makedirs(TEMP_DIR, exist_ok=True)
 
 def generate_slideshow_with_audio(image_urls, audio_url, video_path, uid):
     try:
-        print(f"\n--- [START] Generating Video: {video_path} ---")
+        print(f"\n--- [START] Generating Video: {video_path} ---", flush=True)
+        print(f"[INFO] Received {len(image_urls)} images and audio: {audio_url}", flush=True)
 
         image_paths = []
         images_txt_path = os.path.join(TEMP_DIR, f"{uid}_images.txt")
         audio_path = os.path.join(TEMP_DIR, f"{uid}_audio.mp3")
 
         # Download and save audio
-        print(f"[Audio] Downloading: {audio_url}")
-        r = requests.get(audio_url)
-        r.raise_for_status()
-        with open(audio_path, "wb") as f:
-            f.write(r.content)
-        print(f"[Audio] Saved to: {audio_path}")
+        try:
+            r = requests.get(audio_url)
+            r.raise_for_status()
+            with open(audio_path, "wb") as f:
+                f.write(r.content)
+            print(f"[Audio] Downloaded to: {audio_path}", flush=True)
+        except Exception as e:
+            print(f"[Audio ERROR] {e}", flush=True)
+            return
 
-        # Duration per image (600 seconds = 10 minutes)
+        # Duration per image (10 min total)
         duration = 600 / len(image_urls)
-        print(f"[INFO] Duration per image: {duration:.2f}s")
 
         with open(images_txt_path, "w") as f:
             for idx, url in enumerate(image_urls):
-                print(f"\n[Image {idx+1}] Downloading: {url}")
-
-                ext = url.split("?")[0].split(".")[-1].lower()
-                temp_path = os.path.join(TEMP_DIR, f"{uid}_img_{idx}.{ext}")
-                jpg_path = temp_path.replace(".webp", ".jpg").replace(".png", ".jpg")
-
                 try:
+                    print(f"[Image {idx+1}] Downloading: {url}", flush=True)
                     img_resp = requests.get(url)
                     img_resp.raise_for_status()
                     img = Image.open(BytesIO(img_resp.content)).convert("RGB")
-                    img.save(jpg_path, "JPEG")
-                    print(f"[Image {idx+1}] Saved as: {jpg_path}")
-                except Exception as e:
-                    print(f"[ERROR] Failed to convert image {idx+1}: {e}")
-                    continue
-
-                if os.path.exists(jpg_path):
-                    image_paths.append(jpg_path)
-                    f.write(f"file '{jpg_path}'\n")
+                    img_path = os.path.join(TEMP_DIR, f"{uid}_img_{idx}.jpg")
+                    img.save(img_path, "JPEG")
+                    image_paths.append(img_path)
+                    f.write(f"file '{img_path}'\n")
                     f.write(f"duration {duration}\n")
-                else:
-                    print(f"[WARNING] File does not exist: {jpg_path}")
+                    print(f"[Image {idx+1}] Saved as: {img_path}", flush=True)
+                except Exception as e:
+                    print(f"[Image {idx+1} ERROR] {e}", flush=True)
 
             if image_paths:
-                f.write(f"file '{image_paths[-1]}'\n")
-            else:
-                print("[ERROR] No valid images downloaded.")
-                return
+                f.write(f"file '{image_paths[-1]}'\n")  # Hold last image
 
-        # FFmpeg command
+        if not image_paths:
+            print("[ERROR] No valid images were downloaded", flush=True)
+            return
+
+        # Build FFmpeg command
         cmd = [
             "ffmpeg", "-y",
             "-f", "concat", "-safe", "0",
@@ -79,18 +74,18 @@ def generate_slideshow_with_audio(image_urls, audio_url, video_path, uid):
             video_path
         ]
 
-        print(f"\n[FFMPEG CMD] {' '.join(cmd)}")
+        print(f"[FFMPEG CMD] {' '.join(cmd)}", flush=True)
         result = subprocess.run(cmd, capture_output=True, text=True)
-        print("[FFMPEG STDOUT]\n", result.stdout)
-        print("[FFMPEG STDERR]\n", result.stderr)
+        print("[FFMPEG STDOUT]\n", result.stdout, flush=True)
+        print("[FFMPEG STDERR]\n", result.stderr, flush=True)
 
         if os.path.exists(video_path):
-            print(f"[✅ SUCCESS] Video created at {video_path}")
+            print(f"[✅ SUCCESS] Video created at {video_path}", flush=True)
         else:
-            print(f"[❌ FAILURE] Video was not created")
+            print(f"[❌ FAILURE] FFmpeg failed to create video", flush=True)
 
     except Exception as e:
-        print(f"[EXCEPTION] {e}")
+        print(f"[EXCEPTION] {e}", flush=True)
 
 @app.route('/generate', methods=['POST'])
 def generate():
@@ -104,7 +99,7 @@ def generate():
     uid = str(uuid.uuid4())
     video_path = os.path.join(OUTPUT_DIR, f"{uid}.mp4")
 
-    # Run generation in a separate thread
+    # Run video generation in background
     thread = threading.Thread(
         target=generate_slideshow_with_audio,
         args=(image_urls, audio_url, video_path, uid)
@@ -122,7 +117,7 @@ def serve_video(filename):
 
 @app.route('/')
 def home():
-    return "🎬 FFmpeg 10-Minute Video Generator is running."
+    return "🎬 FFmpeg microservice is running!"
 
 if __name__ == '__main__':
     app.run(host='0.0.0.0', port=10000)
