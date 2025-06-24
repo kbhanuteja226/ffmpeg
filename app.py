@@ -39,7 +39,6 @@ def generate_slideshow_with_audio(image_urls, audio_url, video_path, uid):
             for idx, url in enumerate(image_urls):
                 print(f"\n[Image {idx+1}] Downloading: {url}")
 
-                # Determine a temporary webp or png extension just for naming
                 ext = url.split("?")[0].split(".")[-1].lower()
                 temp_path = os.path.join(TEMP_DIR, f"{uid}_img_{idx}.{ext}")
                 jpg_path = temp_path.replace(".webp", ".jpg").replace(".png", ".jpg")
@@ -108,4 +107,22 @@ def generate():
     # Run generation in a separate thread
     thread = threading.Thread(
         target=generate_slideshow_with_audio,
-        args=(image
+        args=(image_urls, audio_url, video_path, uid)
+    )
+    thread.start()
+
+    return jsonify({
+        "message": "Video generation started.",
+        "video_url": f"{request.host_url}videos/{uid}.mp4"
+    })
+
+@app.route('/videos/<filename>')
+def serve_video(filename):
+    return send_from_directory(OUTPUT_DIR, filename)
+
+@app.route('/')
+def home():
+    return "🎬 FFmpeg 10-Minute Video Generator is running."
+
+if __name__ == '__main__':
+    app.run(host='0.0.0.0', port=10000)
